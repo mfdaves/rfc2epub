@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read};
 use std::process::Command;
 
-use rfc2epub::Rfc;
+use rfc2epub::{Date, Rfc};
 
 const XHTML: &str = "http://www.w3.org/1999/xhtml";
 const OPS: &str = "http://www.idpf.org/2007/ops";
@@ -282,7 +282,14 @@ fn metadata_matches_the_source() {
         "rfc9844-entering-ipv6-zone-identifiers-in-user-interfaces.epub"
     );
     assert_eq!(m.title, "Entering IPv6 Zone Identifiers in User Interfaces");
-    assert_eq!(m.date.iso(), "2025-08");
+    assert_eq!(
+        m.date,
+        Date {
+            year: 2025,
+            month: 8,
+            day: None
+        }
+    );
     assert_eq!(m.obsoletes, [6874]);
     assert_eq!(m.updates, [4007, 7622, 8089]);
     assert_eq!(m.category.as_deref(), Some("Standards Track"));
@@ -326,10 +333,8 @@ fn metadata_matches_the_source() {
     let rfc = html("rfc791");
     let m = rfc.metadata();
     assert_eq!(rfc.file_name(), "rfc791-internet-protocol.epub");
-    assert_eq!(
-        (m.date.iso(), m.obsoletes.as_slice()),
-        ("1981-09".to_string(), [760].as_slice())
-    );
+    assert_eq!((m.date.year, m.date.month, m.date.day), (1981, 9, None));
+    assert_eq!(m.obsoletes, [760]);
     let opf = package_of(&rfc);
     for expected in [
         "<dc:identifier>https://doi.org/10.17487/RFC0791</dc:identifier>",

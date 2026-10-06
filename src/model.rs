@@ -39,17 +39,17 @@ pub struct Metadata {
 
 impl Metadata {
     /// The package title: `RFC <N>: <title>`.
-    pub fn full_title(&self) -> String {
+    pub(crate) fn full_title(&self) -> String {
         format!("RFC {}: {}", self.number, self.title)
     }
 
     /// The unique identifier: `urn:ietf:rfc:<N>`.
-    pub fn urn(&self) -> String {
+    pub(crate) fn urn(&self) -> String {
         format!("urn:ietf:rfc:{}", self.number)
     }
 
     /// The DOI link, with the number padded to at least four digits.
-    pub fn doi(&self) -> String {
+    pub(crate) fn doi(&self) -> String {
         format!("https://doi.org/10.17487/RFC{:04}", self.number)
     }
 }
@@ -160,7 +160,7 @@ impl Date {
     }
 
     /// `YYYY-MM-DD` when the day is known, else `YYYY-MM`.
-    pub fn iso(&self) -> String {
+    pub(crate) fn iso(&self) -> String {
         match self.day {
             Some(day) => format!("{:04}-{:02}-{:02}", self.year, self.month, day),
             None => format!("{:04}-{:02}", self.year, self.month),
@@ -169,13 +169,13 @@ impl Date {
 
     /// The `dcterms:modified` value: the date at midnight UTC, day 1 when the
     /// day is unknown.
-    pub fn modified(&self) -> String {
+    pub(crate) fn modified(&self) -> String {
         let day = self.day.unwrap_or(1);
         format!("{:04}-{:02}-{:02}T00:00:00Z", self.year, self.month, day)
     }
 
     /// `Month YYYY` or `D Month YYYY`.
-    pub fn display(&self) -> String {
+    pub(crate) fn display(&self) -> String {
         let month = month_name(self.month);
         match self.day {
             Some(day) => format!("{day} {month} {}", self.year),
