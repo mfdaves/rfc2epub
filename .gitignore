@@ -3,3 +3,7 @@
 
 # Agent instructions stay local and are never committed
 AGENTS.md
+
+# Books converted while trying the tool, and unfinished writes
+*.epub
+.*.epub.part
