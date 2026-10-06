@@ -6,7 +6,23 @@ rust-version = "1.89"
 description = "Turn an RFC into a clean, navigable EPUB"
 publish = false
 
+[features]
+default = ["fetch"]
+fetch = ["dep:ureq"]
+
 [dependencies]
+roxmltree = "0.21.1"
+serde_json = "1.0.151"
+ureq = { version = "3.4.2", default-features = false, features = ["rustls"], optional = true }
+zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[[bin]]
+name = "rfc2epub"
+path = "src/main.rs"
+required-features = ["fetch"]
 
 [lints.rust]
 unsafe_code = "forbid"
