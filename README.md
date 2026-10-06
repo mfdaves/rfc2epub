@@ -123,10 +123,7 @@ is always kept.
 
 ## Development
 
-`SPEC.md` is the single source of truth for every technical detail: inputs,
-source selection, parsing, the EPUB layout, metadata, file names, the command
-line, the API and the tests. Read it before changing code, and change it in the
-same commit when a rule changes.
+Every change must keep these three passing:
 
 ```console
 $ cargo fmt --check

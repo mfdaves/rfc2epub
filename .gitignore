@@ -1,8 +1,9 @@
 # Build output
 /target/
 
-# Agent instructions stay local and are never committed
+# Agent instructions and the specification stay local and are never committed
 AGENTS.md
+SPEC.md
 
 # Books converted while trying the tool, and unfinished writes
 *.epub
