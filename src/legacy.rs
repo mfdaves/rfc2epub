@@ -36,7 +36,7 @@ pub(crate) fn parse(html: &str, info_json: &str) -> Result<Document, Error> {
 
     let mut warnings = Vec::new();
     let entries = linearize(xml.root_element(), &mut warnings);
-    let mut lines = remove_furniture(entries);
+    let mut lines = remove_furniture(entries, &meta);
     remove_toc(&mut lines);
     let (front, sections) = build(lines, &mut warnings);
 
@@ -296,54 +296,209 @@ fn shape(line: &Line) -> (usize, bool) {
     (text.len() - body.len(), lower)
 }
 
-/// §6.3 steps 2 and 3: drops running headers and footers, keeps their anchors
-/// on the next line that survives, and leaves one blank line at each page
-/// break, or none when a paragraph continues across it (§6.5).
-fn remove_furniture(entries: Vec<Entry>) -> Vec<Line> {
+/// The width of an original RFC page, in columns.
+const PAGE_WIDTH: usize = 72;
+
+/// Splits the linearized lines into the original pages.
+fn paginate(entries: Vec<Entry>) -> Vec<Vec<Line>> {
+    let mut pages = vec![Vec::new()];
+    for entry in entries {
+        match entry {
+            Entry::PageBreak => pages.push(Vec::new()),
+            Entry::Line(line) => {
+                if let Some(page) = pages.last_mut() {
+                    page.push(line);
+                }
+            }
+        }
+    }
+    pages
+}
+
+/// §6.3 step 2: marks the page furniture of every page. A line is furniture
+/// because of where it sits on its page: a `span.grey` line, the page footer
+/// at the bottom, and an unmarked running header at the top.
+fn furniture(pages: &[Vec<Line>], meta: &Metadata) -> Vec<Vec<bool>> {
+    let mut marks: Vec<Vec<bool>> = pages
+        .iter()
+        .map(|page| {
+            page.iter()
+                .map(|line| line.iter().any(|p| p.span() == Span::Grey))
+                .collect()
+        })
+        .collect();
+    for (page, mark) in pages.iter().zip(&mut marks) {
+        if let Some(last) = page.iter().rposition(|l| !is_blank(l))
+            && is_footer(&page[last])
+        {
+            mark[last] = true;
+        }
+    }
+    // The document's own title block is on the first page, so headers are
+    // looked for on the later pages only.
+    let headers: Vec<Option<Header>> = pages
+        .iter()
+        .enumerate()
+        .map(|(i, page)| (i > 0).then(|| running_header(page, meta)).flatten())
+        .collect();
+    let section_text =
+        |page: &[Line], header: &Header| header.section.map(|i| collapse(&line_text(&page[i])));
+    for ((page, mark), header) in pages.iter().zip(&mut marks).zip(&headers) {
+        let Some(header) = header else { continue };
+        mark[header.date] = true;
+        mark[header.title] = true;
+        // A running section title ends the header block or recurs on other
+        // pages; otherwise it may be content and is kept.
+        if let Some(section) = header.section {
+            let ends_block = page.get(section + 1).is_none_or(is_blank);
+            let text = section_text(page, header);
+            let recurs = pages
+                .iter()
+                .zip(&headers)
+                .filter(|(p, h)| h.as_ref().is_some_and(|h| section_text(p, h) == text))
+                .count()
+                > 1;
+            if ends_block || recurs {
+                mark[section] = true;
+            }
+        }
+    }
+    marks
+}
+
+/// The lines of an unmarked running header, as in RFC 791: a date line, a
+/// line with the document title, and possibly a section title.
+struct Header {
+    date: usize,
+    title: usize,
+    /// A candidate section title: the line right after the title line, on the
+    /// opposite side of the page from the date.
+    section: Option<usize>,
+}
+
+fn running_header(page: &[Line], meta: &Metadata) -> Option<Header> {
+    let date = page.iter().position(|l| !is_blank(l))?;
+    let title = date + 1;
+    let plain = |i: usize| {
+        page.get(i)
+            .is_some_and(|l| !is_blank(l) && heading_level(l).is_none())
+    };
+    // The date line counts even when the RFC Editor marked it as a heading,
+    // as in RFC 768; the title line that must follow it shows what it is.
+    let is_date = Date::parse(&line_text(&page[date])).is_some();
+    if !(plain(title) && is_date && is_title_line(&page[title], meta)) {
+        return None;
+    }
+    let section = date + 2;
+    let section =
+        (plain(section) && left_side(&page[section]) != left_side(&page[date])).then_some(section);
+    Some(Header {
+        date,
+        title,
+        section,
+    })
+}
+
+/// Whether a line holds the document title, `RFC <N>`, or both.
+fn is_title_line(line: &Line, meta: &Metadata) -> bool {
+    let text = collapse(&line_text(line));
+    let rest = collapse(&text.replace(&format!("RFC {}", meta.number), " "));
+    rest.is_empty() || rest.eq_ignore_ascii_case(&meta.title)
+}
+
+/// Whether a line sits on the left half of the page: its left margin is no
+/// wider than its right margin.
+fn left_side(line: &Line) -> bool {
+    let text = line_text(line);
+    let indent = text.len() - text.trim_start().len();
+    let width = text.trim().chars().count();
+    indent <= PAGE_WIDTH.saturating_sub(indent + width)
+}
+
+/// Whether a line is a page footer: it starts or ends with a page marker
+/// such as `[Page 4]`, `[Page iii]` or `[page 2]`.
+fn is_footer(line: &Line) -> bool {
+    let text = line_text(line);
+    let text = text.trim();
+    let start = text.find(']').map(|i| &text[..=i]);
+    let end = text.rfind('[').map(|i| &text[i..]);
+    [start, end].into_iter().flatten().any(is_page_marker)
+}
+
+fn is_page_marker(text: &str) -> bool {
+    let Some(inner) = text.strip_prefix('[').and_then(|t| t.strip_suffix(']')) else {
+        return false;
+    };
+    let mut words = inner.split_whitespace();
+    let (Some(word), Some(number), None) = (words.next(), words.next(), words.next()) else {
+        return false;
+    };
+    word.eq_ignore_ascii_case("page") && is_page_number(number)
+}
+
+/// A page number: digits, or a lowercase or uppercase roman numeral.
+fn is_page_number(text: &str) -> bool {
+    !text.is_empty()
+        && (text.bytes().all(|b| b.is_ascii_digit())
+            || (text.len() <= 6
+                && (text.bytes().all(|b| b"ivxlc".contains(&b))
+                    || text.bytes().all(|b| b"IVXLC".contains(&b)))))
+}
+
+/// §6.3 steps 2 and 3: drops page furniture, keeps its anchors on the next line
+/// that survives, and leaves one blank line at each page break, or none when a
+/// paragraph continues across it (§6.5).
+fn remove_furniture(entries: Vec<Entry>, meta: &Metadata) -> Vec<Line> {
+    let pages = paginate(entries);
+    let marks = furniture(&pages, meta);
     let mut out: Vec<Line> = Vec::new();
     let mut pending: Vec<Piece> = Vec::new();
     let mut after_break = false;
     // The indentation of the last line before the latest page break.
     let mut break_indent = None;
-    for entry in entries {
-        let line = match entry {
-            Entry::PageBreak => {
-                while out.last().is_some_and(is_blank) {
-                    out.pop();
-                }
-                if let Some(last) = out.last() {
-                    break_indent = Some(shape(last).0);
-                    out.push(Vec::new());
-                }
-                after_break = true;
-                continue;
+    for (number, (page, mark)) in pages.into_iter().zip(marks).enumerate() {
+        if number > 0 {
+            while out.last().is_some_and(is_blank) {
+                out.pop();
             }
-            Entry::Line(line) => line,
-        };
-        let grey = line.iter().any(|p| p.span() == Span::Grey);
-        if grey || is_blank(&line) {
-            pending.extend(
-                line.into_iter()
-                    .filter(|p| matches!(p, Piece::Anchor { .. })),
-            );
-            if !grey && !after_break {
+            if let Some(last) = out.last() {
+                break_indent = Some(shape(last).0);
                 out.push(Vec::new());
             }
-            continue;
+            after_break = true;
         }
-        after_break = false;
-        if let Some(indent) = break_indent.take()
-            && shape(&line) == (indent, true)
-            && heading_level(&line).is_none()
-            && out.last().is_some_and(is_blank)
-        {
-            out.pop();
+        for (line, furniture) in page.into_iter().zip(mark) {
+            if furniture || is_blank(&line) {
+                // Carried anchors are plain anchors, so that one from a
+                // dropped line never makes a later line a heading or gives
+                // a heading its id.
+                pending.extend(line.into_iter().filter_map(|p| match p {
+                    Piece::Anchor { id, .. } => Some(Piece::Anchor {
+                        id,
+                        selflink: false,
+                        span: Span::Plain,
+                    }),
+                    _ => None,
+                }));
+                if !furniture && !after_break {
+                    out.push(Vec::new());
+                }
+                continue;
+            }
+            after_break = false;
+            if let Some(indent) = break_indent.take()
+                && shape(&line) == (indent, true)
+                && heading_level(&line).is_none()
+                && out.last().is_some_and(is_blank)
+            {
+                out.pop();
+            }
+            let mut line = line;
+            if !pending.is_empty() {
+                line.splice(0..0, pending.drain(..));
+            }
+            out.push(line);
         }
-        let mut line = line;
-        if !pending.is_empty() {
-            line.splice(0..0, pending.drain(..));
-        }
-        out.push(line);
     }
     while out.last().is_some_and(is_blank) {
         out.pop();
@@ -357,8 +512,13 @@ fn remove_furniture(entries: Vec<Entry>) -> Vec<Line> {
     out
 }
 
+/// How many lines after the end of a contents list are checked for entries
+/// that would show the list goes on.
+const TOC_LOOKAHEAD: usize = 10;
+
 /// Removes the original table of contents from the front matter, since the
-/// book has its own (§6.5). Its anchors move to the next line kept.
+/// book has its own (§6.5). The list is removed completely or not at all.
+/// Its anchors move to the next line kept.
 fn remove_toc(lines: &mut Vec<Line>) {
     let front = lines
         .iter()
@@ -373,11 +533,27 @@ fn remove_toc(lines: &mut Vec<Line>) {
     };
     let mut end = title + 1;
     let mut entries = 0;
-    while end < front && (is_blank(&lines[end]) || is_toc_entry(&lines[end])) {
-        entries += usize::from(!is_blank(&lines[end]));
-        end += 1;
+    while end < front {
+        if is_blank(&lines[end]) {
+            end += 1;
+        } else if is_toc_entry(&lines[end]) {
+            entries += 1;
+            end += 1;
+        } else if let Some(next) = wrapped_entry(&lines[..front], end) {
+            entries += 1;
+            end = next;
+        } else {
+            break;
+        }
     }
-    if entries == 0 {
+    // An entry soon after the stop means the list goes on in a form not
+    // recognized here; then it is kept whole rather than cut.
+    let continues = lines[end..front]
+        .iter()
+        .filter(|l| !is_blank(l))
+        .take(TOC_LOOKAHEAD)
+        .any(is_toc_entry);
+    if entries == 0 || continues {
         return;
     }
     // Drop the title, the entries and the blank lines after them.
@@ -395,7 +571,8 @@ fn remove_toc(lines: &mut Vec<Line>) {
 }
 
 /// A line of an in-text table of contents: it links to a section or a page,
-/// or ends with a dot leader and a page number.
+/// ends with a dot leader and a page number, or starts with a section number
+/// and ends with a page number.
 fn is_toc_entry(line: &Line) -> bool {
     let links = line.iter().any(|p| match p {
         Piece::Link { href, .. } => ["#section-", "#appendix-", "#page-"]
@@ -405,9 +582,49 @@ fn is_toc_entry(line: &Line) -> bool {
     });
     let text = line_text(line);
     let text = text.trim_end();
-    let page = text.trim_end_matches(|c: char| c.is_ascii_digit() || "ivxlcIVXLC".contains(c));
-    let leader = page.trim_end().ends_with(". .") || page.trim_end().ends_with("..");
-    links || (page.len() < text.len() && leader)
+    let Some((before, page)) = text.rsplit_once([' ', '.']) else {
+        return links;
+    };
+    let numbered = is_page_number(page) && !before.trim().is_empty();
+    let leader = text[..text.len() - page.len()].trim_end().ends_with("..")
+        || text[..text.len() - page.len()].trim_end().ends_with(". .");
+    links || (numbered && (leader || starts_with_section_number(line)))
+}
+
+/// An entry wrapped over two or three lines, as in RFC 3958: one or two head
+/// lines, then a more indented tail that is an entry without a section number
+/// of its own. Returns the index after the tail.
+fn wrapped_entry(lines: &[Line], start: usize) -> Option<usize> {
+    let indent = shape(&lines[start]).0;
+    for (tail, line) in lines.iter().enumerate().skip(start + 1).take(2) {
+        if is_blank(line) {
+            return None;
+        }
+        if is_toc_entry(line) {
+            let completes = shape(line).0 > indent && !starts_with_section_number(line);
+            return completes.then_some(tail + 1);
+        }
+    }
+    None
+}
+
+/// Whether a line starts with a section number such as `13.3.4`, `A.1.` or
+/// `Appendix A`, followed by more text.
+fn starts_with_section_number(line: &Line) -> bool {
+    let text = line_text(line);
+    let mut words = text.split_whitespace();
+    let (Some(first), Some(_)) = (words.next(), words.next()) else {
+        return false;
+    };
+    if first.eq_ignore_ascii_case("appendix") {
+        return true;
+    }
+    let mut parts = first.trim_end_matches('.').split('.');
+    let head = parts.next().unwrap_or("");
+    let digits = |p: &str| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit());
+    let letter =
+        head.len() == 1 && head.bytes().all(|b| b.is_ascii_uppercase()) && first.contains('.');
+    (digits(head) || letter) && parts.all(digits)
 }
 
 /// The heading level of a line, if it is a heading.
@@ -531,6 +748,10 @@ fn heading(
     {
         n.push('.');
         *first = stripped.trim_start().to_string();
+    }
+    // Anchors carried onto the heading may precede its text.
+    if let Some(Inline::Text(first)) = title.iter_mut().find(|i| !matches!(i, Inline::Anchor(_))) {
+        *first = first.trim_start().to_string();
     }
     trim_inlines(&mut title);
     let id = id.unwrap_or_else(|| {
@@ -745,6 +966,147 @@ mod tests {
             "   A paragraph split\n   across pages.\n\n   New paragraph."
         );
         assert!(doc.warnings.is_empty(), "{:?}", doc.warnings);
+    }
+
+    /// A record for an RFC titled "Test Protocol", as in the headers below.
+    const PROTOCOL: &str = r#"{"doc_id":"RFC999","title":"Test Protocol","authors":["A. Author"],
+        "pub_date":"September 1981","abstract":"","keywords":[],"pub_status":"UNKNOWN",
+        "obsoletes":[],"updates":[],"format":["TEXT","HTML"]}"#;
+
+    const BREAK: &str = "</pre>\n<hr class='noprint'/><!--NewPage--><pre class='newpage'>";
+
+    /// Every line of the book's text, in order.
+    fn book_lines(doc: &Document) -> Vec<String> {
+        fn section(s: &Section, out: &mut Vec<String>) {
+            out.push(s.label());
+            for block in &s.blocks {
+                if let BlockKind::Pre { content, .. } = &block.kind {
+                    let text: String = content
+                        .iter()
+                        .map(|i| match i {
+                            Inline::Text(t) => t.clone(),
+                            Inline::Link(_, inner) => crate::model::plain_text(inner),
+                            _ => String::new(),
+                        })
+                        .collect();
+                    out.extend(text.lines().map(str::to_string));
+                }
+            }
+            for child in &s.children {
+                section(child, out);
+            }
+        }
+        let mut out = Vec::new();
+        for s in doc.front.iter().chain(&doc.sections) {
+            section(s, &mut out);
+        }
+        out.retain(|l| !l.trim().is_empty());
+        out
+    }
+
+    #[test]
+    fn unmarked_running_headers_and_footers() {
+        let html = [
+            // The title block on the first page stays, date included.
+            "<pre>RFC:  999\n                           September 1981\n\n                         TEST PROTOCOL\n\n   Body one.\n\n                                                          [Page 1]",
+            // Date left, title and section right; a content line follows on the
+            // date's side and stays, as `SEGMENT ARRIVES` does in RFC 793.
+            "<span id=\"page-2\" ></span>\nSeptember 1981\n                                                       Test Protocol\n                                                       Specification\nSEGMENT ARRIVES\n\n   Body two.\n\n\nAuthor                                                    [Page 2]",
+            // A grey date right, then title and section left.
+            "<span class=\"grey\">                                                    September 1981</span>\nTest Protocol\nSpecification\n\n   Body three.\n\n[Page 3]",
+            // A two-line header, then content directly under it: kept.
+            "                                                    September 1981\nTest Protocol\nThis paragraph starts right away\n   and goes on.\n\n[page 4]                                                   Author",
+            // RFC 768: a date wrongly marked as a heading, the number with the
+            // title, and a running section title that ends the block.
+            "<span class=\"h2\"><a class=\"selflink\" id=\"section-28\" href=\"#section-28\">28</a> Sep 1981</span>\nRFC 999                                      Test Protocol\n                                                       Fields\n\n   Body five.\n\n[Page 5]",
+            // The last page: its unmarked footer and the padding before it go.
+            "September 1981\n                                                       Test Protocol\n\n   Last words.\n\n\n\n\nAuthor                                                    [Page 6]</pre>",
+        ]
+        .join(BREAK);
+        let doc = parse(&html, PROTOCOL).unwrap();
+        let lines = book_lines(&doc);
+        let trimmed: Vec<&str> = lines.iter().map(|l| l.trim()).collect();
+        for gone in [
+            "Test Protocol",
+            "Specification",
+            "Fields",
+            "September 1981",
+            "28 Sep 1981",
+        ] {
+            assert_eq!(
+                trimmed.iter().filter(|l| **l == gone).count(),
+                usize::from(gone == "September 1981"),
+                "{gone}: {lines:#?}"
+            );
+        }
+        assert!(
+            lines
+                .iter()
+                .all(|l| !is_footer(&vec![Piece::Text(l.clone(), Span::Plain)])),
+            "{lines:#?}"
+        );
+        for kept in [
+            "RFC:  999",
+            "TEST PROTOCOL",
+            "SEGMENT ARRIVES",
+            "This paragraph starts right away",
+            "Body five.",
+        ] {
+            assert!(trimmed.contains(&kept), "{kept}: {lines:#?}");
+        }
+        assert_eq!(trimmed.last(), Some(&"Last words."));
+        assert!(doc.sections.is_empty(), "the date heading made a section");
+        assert!(doc.warnings.is_empty(), "{:?}", doc.warnings);
+    }
+
+    #[test]
+    fn contents_are_removed_completely() {
+        let html = concat!(
+            "<pre>Front\n\nTable of Contents\n\n",
+            "   <a href=\"#section-1\">1</a>.  One . . . . . . . . . . . . . <a href=\"#page-2\">2</a>\n",
+            // RFC 2616: no link and a one-dot leader.
+            "   13.3.4   Rules for When to Use Entity Tags and Last-Modified Dates.89\n",
+            // RFC 3958: an entry wrapped over two lines, the first unlinked.
+            "             3.1.1.  Registration of Application Service and\n",
+            "                     Protocol Tags. . . . . . . . . . . . . . . . . .  7\n",
+            "   Appendix A.  Collected ABNF . . . . . . . . . . . . . . . . . . 12\n\n",
+            // RFC 791: a preface follows the list before the first heading.
+            "                              PREFACE\n\n   This preface stays.\n\n",
+            "<span class=\"h2\"><a class=\"selflink\" id=\"section-1\" href=\"#section-1\">1</a>.  One</span>\n\n   Text.</pre>"
+        );
+        let doc = parse(html, INFO).unwrap();
+        let lines = book_lines(&doc);
+        let trimmed: Vec<&str> = lines.iter().map(|l| l.trim()).collect();
+        assert_eq!(
+            trimmed,
+            ["Front", "PREFACE", "This preface stays.", "1. One", "Text."],
+            "{lines:#?}"
+        );
+    }
+
+    #[test]
+    fn contents_are_kept_whole_when_unsure() {
+        let html = concat!(
+            "<pre>Front\n\nTable of Contents\n\n",
+            "   <a href=\"#section-1\">1</a>.  One . . . . . . . . . . . . . <a href=\"#page-2\">2</a>\n",
+            "   An entry in a shape this converter does not know\n",
+            "   <a href=\"#section-2\">2</a>.  Two . . . . . . . . . . . . . <a href=\"#page-3\">3</a>\n\n",
+            "<span class=\"h2\"><a class=\"selflink\" id=\"section-1\" href=\"#section-1\">1</a>.  One</span>\n",
+            "<span id=\"page-2\" ></span>   Text.\n",
+            "<span class=\"h2\"><a class=\"selflink\" id=\"section-2\" href=\"#section-2\">2</a>.  Two</span>\n",
+            "<span id=\"page-3\" ></span>   More.</pre>"
+        );
+        let doc = parse(html, INFO).unwrap();
+        let lines = book_lines(&doc);
+        assert_eq!(lines.len(), 9, "{lines:#?}");
+        assert!(
+            lines.iter().any(|l| l.contains("An entry in a shape")),
+            "{lines:#?}"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("Table of Contents")),
+            "{lines:#?}"
+        );
     }
 
     #[test]

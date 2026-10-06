@@ -394,6 +394,80 @@ fn content_survives_conversion() {
     assert!(rfc.warnings().is_empty(), "{:?}", rfc.warnings());
 }
 
+/// The text lines of a book's front matter and sections, markup removed.
+fn text_lines(rfc: &Rfc) -> Vec<String> {
+    let mut out = Vec::new();
+    for (name, xhtml) in entries(&epub(rfc)) {
+        let file = name.trim_start_matches("EPUB/");
+        if !(file == "front.xhtml" || file.starts_with("sec-")) {
+            continue;
+        }
+        let body = xhtml.split_once("<body>").map_or("", |(_, b)| b);
+        let mut text = String::new();
+        let mut in_tag = false;
+        for c in body.chars() {
+            match c {
+                '<' => in_tag = true,
+                '>' => in_tag = false,
+                c if !in_tag => text.push(c),
+                _ => {}
+            }
+        }
+        let text = text
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&amp;", "&");
+        out.extend(text.lines().map(str::to_string));
+    }
+    out
+}
+
+/// A running footer such as `Postel   [Page 4]`.
+fn is_footer(line: &str) -> bool {
+    let line = line.trim().to_ascii_lowercase();
+    let end = line
+        .rsplit_once('[')
+        .is_some_and(|(_, m)| m.starts_with("page ") && m.ends_with(']'));
+    let start = line.starts_with("[page ");
+    end || start
+}
+
+#[test]
+fn legacy_page_furniture_is_removed() {
+    let lines = text_lines(&html("rfc791"));
+    let count = |text: &str| lines.iter().filter(|l| l.trim() == text).count();
+    assert_eq!(
+        lines.iter().filter(|l| is_footer(l)).count(),
+        0,
+        "a footer is left"
+    );
+    // The running header: date, document title and section title.
+    assert_eq!(
+        count("September 1981"),
+        1,
+        "only the title block keeps the date"
+    );
+    for header in ["Internet Protocol", "Specification", "Overview", "Glossary"] {
+        assert_eq!(count(header), 0, "running header {header:?} is left");
+    }
+    for kept in ["INTERNET PROTOCOL", "RFC:  791", "PREFACE"] {
+        assert!(count(kept) > 0, "{kept:?} was lost");
+    }
+    for (name, rfc) in fixtures()
+        .into_iter()
+        .filter(|(n, _)| ["rfc791", "rfc2119", "rfc8259"].contains(n))
+    {
+        let lines = text_lines(&rfc);
+        let last = lines
+            .iter()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .expect("text");
+        assert!(!is_footer(last), "{name} ends with a footer: {last:?}");
+    }
+}
+
 /// Runs EPUBCheck when `EPUBCHECK` names it, for example
 /// `EPUBCHECK="java -jar epubcheck.jar"`.
 #[test]
