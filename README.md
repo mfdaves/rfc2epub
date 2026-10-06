@@ -4,11 +4,11 @@ Turn a published IETF RFC into a clean EPUB that is pleasant to read on an
 e-reader, a tablet or a phone.
 
 ```console
-$ rfc2epub https://www.rfc-editor.org/rfc/rfc9114.html
+$ rfc2epub rfc9114
 rfc9114-http-3.epub
 ```
 
-Give it a link to an RFC, get an EPUB back.
+Give it an RFC, get an EPUB back.
 
 ## What you get
 
@@ -48,7 +48,7 @@ Or build it in place with `cargo build --release`; the binary is
 Usage: rfc2epub [OPTIONS] <RFC>...
 
 Arguments:
-  <RFC>...  One to five references: a link, "rfc9114" or "9114"
+  <RFC>...  One to five RFCs, such as "rfc9114" or "9114" (a link works too)
 
 Options:
   -o, --output-dir <DIR>  Directory to write into [default: .]
@@ -58,15 +58,21 @@ Options:
   -V, --version           Print version
 ```
 
-A reference can be a number (`9114`), a name (`rfc9114`, `RFC 9114`) or a link
-of any common form: `rfc-editor.org`, `datatracker.ietf.org` or `doi.org`.
+Name an RFC by its number: `rfc9114`, `RFC 9114` or just `9114`. The book
+always comes from the RFC Editor, whatever you type.
 
 ```console
-$ rfc2epub -o books rfc9000 https://datatracker.ietf.org/doc/html/rfc2616 791
+$ rfc2epub -o books rfc9000 rfc2616 791
 books/rfc9000-quic-a-udp-based-multiplexed-and-secure-transport.epub
 books/rfc2616-hypertext-transfer-protocol-http-1-1.epub
 books/rfc791-internet-protocol.epub
 ```
+
+A link works too, which is handy when you have just copied one from a browser:
+`https://www.rfc-editor.org/rfc/rfc9114.html`,
+`https://datatracker.ietf.org/doc/html/rfc9114` or
+`https://doi.org/10.17487/RFC9114`. Only the RFC number is read from it; the
+link itself is never fetched.
 
 - Each RFC becomes its own file. At most five RFCs per run; a duplicate is
   converted once.
@@ -138,7 +144,7 @@ rfc2epub = { path = "../rfc2epub" }
 ```
 
 ```rust
-let number = rfc2epub::parse_reference("https://www.rfc-editor.org/rfc/rfc9114.html")?;
+let number = rfc2epub::parse_reference("rfc9114")?;
 let rfc = rfc2epub::fetch(number)?; // feature `fetch`, on by default
 for warning in rfc.warnings() {
     eprintln!("{warning}");
@@ -182,7 +188,7 @@ $ RFC_SURVEY="791 2616 9114" cargo test --release --test epub -- --ignored --noc
 | Path | Contents |
 |---|---|
 | `src/lib.rs` | Public API |
-| `src/reference.rs` | From a link to an RFC number |
+| `src/reference.rs` | From `rfc9114`, `9114` or a link to an RFC number |
 | `src/xml.rs` | RFCXML v3 parser |
 | `src/legacy.rs` | Legacy HTML parser |
 | `src/model.rs` | Document model, metadata, dates, names |

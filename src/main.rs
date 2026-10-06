@@ -15,7 +15,7 @@ const USAGE: &str = "Turn an RFC into a clean, navigable EPUB
 Usage: rfc2epub [OPTIONS] <RFC>...
 
 Arguments:
-  <RFC>...  One to five references: a link, \"rfc9114\" or \"9114\"
+  <RFC>...  One to five RFCs, such as \"rfc9114\" or \"9114\" (a link works too)
 
 Options:
   -o, --output-dir <DIR>  Directory to write into [default: .]

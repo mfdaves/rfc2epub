@@ -6,7 +6,7 @@
 //!
 //! ```no_run
 //! # fn main() -> Result<(), rfc2epub::Error> {
-//! let number = rfc2epub::parse_reference("https://www.rfc-editor.org/rfc/rfc9114.html")?;
+//! let number = rfc2epub::parse_reference("rfc9114")?;
 //! let rfc = rfc2epub::fetch(number)?;
 //! let file = std::fs::File::create(rfc.file_name())?;
 //! rfc.write_epub(file)?;
