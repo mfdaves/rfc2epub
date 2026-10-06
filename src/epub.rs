@@ -360,7 +360,12 @@ fn title_page(doc: &Document) -> String {
     if let Some(stream) = &meta.stream {
         let _ = writeln!(facts, "<dt>Stream</dt><dd>{}</dd>", escape(stream));
     }
-    for (label, numbers) in [("Obsoletes", &meta.obsoletes), ("Updates", &meta.updates)] {
+    for (label, numbers) in [
+        ("Obsoletes", &meta.obsoletes),
+        ("Updates", &meta.updates),
+        ("Obsoleted by", &meta.obsoleted_by),
+        ("Updated by", &meta.updated_by),
+    ] {
         if !numbers.is_empty() {
             let links: Vec<String> = numbers
                 .iter()

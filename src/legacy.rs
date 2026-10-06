@@ -95,15 +95,25 @@ fn metadata(info: &Value) -> Result<Metadata, Error> {
         source: format!("{BASE}rfc{number}.html"),
         category: (!status.is_empty()).then(|| title_case(&status)),
         stream: None,
-        obsoletes: list("obsoletes")
-            .iter()
-            .filter_map(|s| rfc_number(s))
-            .collect(),
-        updates: list("updates")
-            .iter()
-            .filter_map(|s| rfc_number(s))
-            .collect(),
+        obsoletes: record_rfcs(info, "obsoletes"),
+        updates: record_rfcs(info, "updates"),
+        obsoleted_by: record_rfcs(info, "obsoleted_by"),
+        updated_by: record_rfcs(info, "updated_by"),
     })
+}
+
+/// A list of RFCs in the RFC Editor's record, such as `["RFC760"]`. Entries
+/// that are not RFCs are skipped.
+pub(crate) fn record_rfcs(info: &Value, key: &str) -> Vec<u32> {
+    info[key]
+        .as_array()
+        .map(|list| {
+            list.iter()
+                .filter_map(Value::as_str)
+                .filter_map(|id| rfc_number(id.trim()))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Parses `RFC2119`.
@@ -1107,6 +1117,17 @@ mod tests {
             lines.iter().any(|l| l.contains("Table of Contents")),
             "{lines:#?}"
         );
+    }
+
+    #[test]
+    fn later_rfcs_from_the_record() {
+        let info: Value = serde_json::from_str(
+            r#"{"updated_by": ["RFC8174", "STD0001", " RFC0001 "], "obsoleted_by": "RFC1"}"#,
+        )
+        .unwrap();
+        assert_eq!(record_rfcs(&info, "updated_by"), [8174, 1]);
+        assert!(record_rfcs(&info, "obsoleted_by").is_empty());
+        assert!(record_rfcs(&info, "missing").is_empty());
     }
 
     #[test]

@@ -16,6 +16,8 @@ Give it a link to an RFC, get an EPUB back.
   their RFCXML source, with real paragraphs, lists, tables, figures and inline
   SVG diagrams. Older RFCs are built from the RFC Editor's HTML, with the
   running headers, page footers and the old contents list taken out.
+- **Know whether it is current.** The title page lists the RFCs this one
+  obsoletes and updates, and the later RFCs that obsolete or update it.
 - **Navigation that works.** A real table of contents, the reader's outline
   filled from the section tree, and live cross-references.
 - **Complete metadata.** Title, authors with editor roles and sort names,
@@ -117,7 +119,9 @@ rfc.write_epub(std::fs::File::create(rfc.file_name())?)?;
 
 Without the network, parse files you already have with `Rfc::from_xml(xml)` or
 `Rfc::from_html(html, info_json)`. `Rfc::metadata()` returns the metadata as
-plain fields. Errors are one `Error` enum; warnings (`UnknownElement`,
+plain fields. The later RFCs that obsolete or update an RFC come from the
+RFC Editor's record, so `fetch` and `from_html` fill them in and `from_xml`
+leaves them empty. Errors are one `Error` enum; warnings (`UnknownElement`,
 `BrokenLink`, `OmittedContent`) never stop a conversion, and the text concerned
 is always kept.
 

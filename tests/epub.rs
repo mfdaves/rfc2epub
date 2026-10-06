@@ -357,6 +357,22 @@ fn metadata_matches_the_source() {
         rfc.metadata().category.as_deref(),
         Some("Best Current Practice")
     );
+    // Later RFCs come from the record and show on the title page.
+    assert_eq!(rfc.metadata().updated_by, [8174]);
+    assert!(rfc.metadata().obsoleted_by.is_empty());
+    let title = entries(&epub(&rfc))
+        .into_iter()
+        .find(|(n, _)| n == "EPUB/title.xhtml")
+        .map(|(_, t)| t)
+        .expect("title page");
+    assert!(
+        title.contains(
+            "<dt>Updated by</dt><dd><a href=\"https://www.rfc-editor.org/rfc/rfc8174\">RFC 8174</a></dd>"
+        ),
+        "{title}"
+    );
+    // An XML source predates later RFCs; only `fetch` adds them.
+    assert!(xml("rfc9844").metadata().updated_by.is_empty());
     assert_eq!(
         rfc.file_name(),
         "rfc2119-key-words-for-use-in-rfcs-to-indicate-requirement-levels.epub"

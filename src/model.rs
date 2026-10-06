@@ -35,6 +35,12 @@ pub struct Metadata {
     pub obsoletes: Vec<u32>,
     /// The RFCs this one updates.
     pub updates: Vec<u32>,
+    /// The later RFCs that obsolete this one, as the RFC Editor's record lists
+    /// them. Empty when unknown.
+    pub obsoleted_by: Vec<u32>,
+    /// The later RFCs that update this one, as the RFC Editor's record lists
+    /// them. Empty when unknown.
+    pub updated_by: Vec<u32>,
 }
 
 impl Metadata {

@@ -29,13 +29,17 @@ pub fn fetch(number: u32) -> Result<Rfc, Error> {
                 .any(|f| f.as_str().is_some_and(|f| f.eq_ignore_ascii_case(format)))
         })
     };
-    let rfc = if has("XML") {
+    let mut rfc = if has("XML") {
         Rfc::from_xml(&get_source(&agent, &format!("{base}.xml"))?)?
     } else if has("HTML") {
         Rfc::from_html(&get_source(&agent, &format!("{base}.html"))?, &json)?
     } else {
         return Err(Error::Unsupported(number));
     };
+    // Only the record knows the RFCs published later that obsolete or update
+    // this one; the XML source predates them.
+    rfc.doc.meta.obsoleted_by = crate::legacy::record_rfcs(&info, "obsoleted_by");
+    rfc.doc.meta.updated_by = crate::legacy::record_rfcs(&info, "updated_by");
     if rfc.metadata().number != number {
         return Err(Error::InvalidSource(format!(
             "the source describes RFC {} instead of RFC {number}",

@@ -135,6 +135,9 @@ pub(crate) fn parse(text: &str) -> Result<Document, Error> {
         stream: root.attribute("submissionType").and_then(stream),
         obsoletes: rfc_numbers(root.attribute("obsoletes")),
         updates: rfc_numbers(root.attribute("updates")),
+        // Later RFCs are known only to the RFC Editor's record (see `fetch`).
+        obsoleted_by: Vec::new(),
+        updated_by: Vec::new(),
     };
 
     let mut doc = Document {
