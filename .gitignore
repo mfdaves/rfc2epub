@@ -1,0 +1,5 @@
+# Build output
+/target/
+
+# Agent instructions stay local and are never committed
+AGENTS.md

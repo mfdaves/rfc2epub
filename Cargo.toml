@@ -1,0 +1,16 @@
+[package]
+name = "rfc2epub"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+description = "Turn an RFC into a clean, navigable EPUB"
+publish = false
+
+[dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"
