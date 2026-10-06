@@ -89,7 +89,18 @@ pub(crate) fn parse(text: &str) -> Result<Document, Error> {
                 "references" => sections.push(p.references(node, 1, true)),
                 // Consumed by the prep tool into derivedAnchor.
                 "displayreference" => {}
-                other => p.warn(Warning::UnknownElement(other.to_string())),
+                _ => {
+                    // Keep the text with whatever precedes it.
+                    p.warn(Warning::UnknownElement(node.tag_name().name().to_string()));
+                    let blocks = p.blocks_of(node);
+                    match sections.last_mut().or(front_sections.last_mut()) {
+                        Some(section) => section.blocks.extend(blocks),
+                        None => front_sections.push(Section {
+                            blocks,
+                            ..Section::default()
+                        }),
+                    }
+                }
             }
         }
     }
@@ -700,14 +711,30 @@ impl<'a> Parser<'a> {
         };
         for part in node.children().filter(Node::is_element) {
             match name(part) {
-                "name" | "iref" => {}
+                "name" => {}
+                "iref" => {
+                    if let Some(id) = self.id_for(part, false) {
+                        table
+                            .caption
+                            .get_or_insert_with(Vec::new)
+                            .insert(0, Inline::Anchor(id));
+                    }
+                }
                 "thead" => table.head.extend(self.rows(part)),
                 "tbody" => table.body.extend(self.rows(part)),
                 "tfoot" => table.foot.extend(self.rows(part)),
                 "tr" => table.body.push(self.row(part)),
-                other => {
-                    let other = other.to_string();
-                    self.warn(Warning::UnknownElement(other));
+                _ => {
+                    // Keep the text as a row of its own.
+                    self.warn(Warning::UnknownElement(part.tag_name().name().to_string()));
+                    let content = Flow::Blocks(self.blocks_of(part));
+                    table.body.push(vec![Cell {
+                        header: false,
+                        align: None,
+                        colspan: 1,
+                        rowspan: 1,
+                        item: Item { id: None, content },
+                    }]);
                 }
             }
         }
