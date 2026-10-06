@@ -1,4 +1,4 @@
-//! The document model as XHTML content documents (§7.4).
+//! The document model as XHTML content documents.
 
 use std::collections::HashMap;
 
@@ -7,7 +7,7 @@ use crate::model::{
 };
 
 /// Preformatted blocks, tables and figures this short avoid page breaks
-/// inside them (§7.5).
+/// inside them.
 const SHORT_LINES: usize = 24;
 const SHORT_ROWS: usize = 12;
 

@@ -1,4 +1,4 @@
-//! Structural, determinism and EPUBCheck tests on real RFC Editor files (§14).
+//! Structural, determinism and EPUBCheck tests on real RFC Editor files.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read};

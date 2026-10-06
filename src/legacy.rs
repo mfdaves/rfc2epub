@@ -1,4 +1,4 @@
-//! Source B: legacy HTML (§6).
+//! The source of RFCs before 8650: the RFC Editor's legacy HTML.
 
 use roxmltree::{Node, ParsingOptions};
 use serde_json::Value;
@@ -23,8 +23,8 @@ pub(crate) fn parse(html: &str, info_json: &str) -> Result<Document, Error> {
             "the HTML does not begin with <pre".into(),
         ));
     }
-    // §6.2: drop characters XML forbids, name the one entity XML lacks, and
-    // add a root element.
+    // Make the fragment well-formed XML: drop characters XML forbids, name
+    // the one entity XML lacks, and add a root element.
     let cleaned: String = html.chars().filter(|c| xml_char(*c)).collect();
     let wrapped = format!("<root>{}</root>", cleaned.replace("&nbsp;", "&#160;"));
     let options = ParsingOptions {
@@ -56,7 +56,7 @@ pub(crate) fn parse(html: &str, info_json: &str) -> Result<Document, Error> {
     Ok(doc)
 }
 
-/// The metadata of §6.6, taken from the RFC Editor's record.
+/// The metadata, taken from the RFC Editor's `rfc<N>.json` record.
 fn metadata(info: &Value) -> Result<Metadata, Error> {
     let text = |key: &str| collapse(info[key].as_str().unwrap_or(""));
     let list = |key: &str| -> Vec<String> {
@@ -161,7 +161,7 @@ enum Entry {
     PageBreak,
 }
 
-/// §6.3 step 1: the contents of all `<pre>` blocks as one sequence of lines.
+/// The contents of all `<pre>` blocks as one sequence of lines.
 fn linearize(root: Node, warnings: &mut Vec<Warning>) -> Vec<Entry> {
     let mut entries = Vec::new();
     let mut pages = 0;
@@ -315,7 +315,7 @@ fn paginate(entries: Vec<Entry>) -> Vec<Vec<Line>> {
     pages
 }
 
-/// §6.3 step 2: marks the page furniture of every page. A line is furniture
+/// Marks the page furniture of every page. A line is furniture
 /// because of where it sits on its page: a `span.grey` line, the page footer
 /// at the bottom, and an unmarked running header at the top.
 fn furniture(pages: &[Vec<Line>], meta: &Metadata) -> Vec<Vec<bool>> {
@@ -445,9 +445,9 @@ fn is_page_number(text: &str) -> bool {
                     || text.bytes().all(|b| b"IVXLC".contains(&b)))))
 }
 
-/// §6.3 steps 2 and 3: drops page furniture, keeps its anchors on the next line
-/// that survives, and leaves one blank line at each page break, or none when a
-/// paragraph continues across it (§6.5).
+/// Drops page furniture, keeps its anchors on the next line that survives, and
+/// leaves one blank line at each page break, or none when a paragraph
+/// continues across it.
 fn remove_furniture(entries: Vec<Entry>, meta: &Metadata) -> Vec<Line> {
     let pages = paginate(entries);
     let marks = furniture(&pages, meta);
@@ -517,7 +517,7 @@ fn remove_furniture(entries: Vec<Entry>, meta: &Metadata) -> Vec<Line> {
 const TOC_LOOKAHEAD: usize = 10;
 
 /// Removes the original table of contents from the front matter, since the
-/// book has its own (§6.5). The list is removed completely or not at all.
+/// book has its own. The list is removed completely or not at all.
 /// Its anchors move to the next line kept.
 fn remove_toc(lines: &mut Vec<Line>) {
     let front = lines
@@ -635,7 +635,7 @@ fn heading_level(line: &Line) -> Option<u8> {
     })
 }
 
-/// §6.3 steps 4 to 6: the front matter and the tree of sections.
+/// The front matter and the tree of sections.
 fn build(lines: Vec<Line>, warnings: &mut Vec<Warning>) -> (Section, Vec<Section>) {
     let shallowest = lines.iter().filter_map(heading_level).min().unwrap_or(2);
     let mut front = Section {
@@ -806,7 +806,7 @@ fn flush(text: &mut Vec<Line>, blocks: &mut Vec<Block>, warnings: &mut Vec<Warni
     }));
 }
 
-/// One piece as inline content. Links follow §6.4.
+/// One piece as inline content, with its link resolved.
 fn inline(piece: &Piece, warnings: &mut Vec<Warning>) -> Vec<Inline> {
     match piece {
         Piece::Text(text, _) => vec![Inline::Text(text.clone())],
@@ -824,7 +824,7 @@ fn inline(piece: &Piece, warnings: &mut Vec<Warning>) -> Vec<Inline> {
     }
 }
 
-/// Where a link of the legacy HTML points (§6.4).
+/// Where a link of the legacy HTML points.
 fn link_target(href: &str) -> Option<Target> {
     let href = href.trim();
     if let Some(fragment) = href.strip_prefix('#') {

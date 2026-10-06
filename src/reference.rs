@@ -1,8 +1,8 @@
-//! From a link or a number to an RFC number (§3).
+//! From a link or a number to an RFC number.
 
 use crate::Error;
 
-/// Reduces a link or a number to an RFC number (§3).
+/// Reduces a link or a number to an RFC number.
 ///
 /// The link is only parsed, never fetched, and its host is not checked.
 pub fn parse_reference(input: &str) -> Result<u32, Error> {
@@ -70,7 +70,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn spec_table() {
+    fn reference_forms() {
         let ok = [
             ("9114", 9114),
             ("rfc9114", 9114),

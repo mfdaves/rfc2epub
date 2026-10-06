@@ -1,4 +1,4 @@
-//! The private document model (§2), the public metadata types (§7.2) and the
+//! The private document model, the public metadata types and the
 //! pure helpers both parsers share: dates, author names, slugs and file names.
 
 use std::collections::HashSet;
@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 
 use crate::Warning;
 
-/// The values of §7.2, as plain fields.
+/// The book's metadata, as plain fields.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Metadata {
     /// The RFC number.
@@ -262,7 +262,8 @@ pub(crate) fn squeeze(text: &str) -> String {
     out
 }
 
-/// The file-name slug of §8.
+/// The file-name slug: the title in lowercase ASCII letters and digits, runs
+/// of anything else as one `-`, cut to 60 characters at a word boundary.
 pub(crate) fn slug(title: &str) -> String {
     let mut out = String::new();
     let mut gap = false;
@@ -288,7 +289,8 @@ pub(crate) fn slug(title: &str) -> String {
     out
 }
 
-/// The output file name of §8.
+/// The output file name: `rfc<number>-<slug>.epub`, or `rfc<number>.epub`
+/// when the slug is empty.
 pub(crate) fn file_name(number: u32, title: &str) -> String {
     let slug = slug(title);
     if slug.is_empty() {
@@ -703,7 +705,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn file_names_from_spec() {
+    fn file_names() {
         let rows = [
             (9114, "HTTP/3", "rfc9114-http-3.epub"),
             (791, "Internet Protocol", "rfc791-internet-protocol.epub"),

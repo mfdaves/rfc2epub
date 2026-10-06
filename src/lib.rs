@@ -1,6 +1,8 @@
 //! Turn an RFC into a clean, navigable EPUB.
 //!
-//! The behaviour of this crate is defined in `SPEC.md` at the repository root.
+//! The library behind the `rfc2epub` command. It reads an RFC from the RFC
+//! Editor's RFCXML source (RFC 8650 onward) or legacy HTML (older RFCs) and
+//! writes it as an EPUB 3 book with navigation and complete metadata.
 //!
 //! ```no_run
 //! # fn main() -> Result<(), rfc2epub::Error> {
@@ -36,38 +38,38 @@ pub struct Rfc {
 }
 
 impl Rfc {
-    /// Parses a published RFCXML v3 file (§5).
+    /// Parses a published RFCXML v3 file.
     pub fn from_xml(xml: &str) -> Result<Rfc, Error> {
         xml::parse(xml).map(|doc| Rfc { doc })
     }
 
-    /// Parses a legacy HTML file together with its `rfc<N>.json` record (§6).
+    /// Parses a legacy HTML file together with its `rfc<N>.json` record.
     pub fn from_html(html: &str, info_json: &str) -> Result<Rfc, Error> {
         legacy::parse(html, info_json).map(|doc| Rfc { doc })
     }
 
-    /// The metadata written into the EPUB package (§7.2).
+    /// The metadata written into the EPUB package.
     pub fn metadata(&self) -> &Metadata {
         &self.doc.meta
     }
 
-    /// The warnings collected while parsing (§12).
+    /// The warnings collected while parsing.
     pub fn warnings(&self) -> &[Warning] {
         &self.doc.warnings
     }
 
-    /// The output file name defined in §8.
+    /// The output file name: `rfc<number>-<title slug>.epub`.
     pub fn file_name(&self) -> String {
         model::file_name(self.doc.meta.number, &self.doc.meta.title)
     }
 
-    /// Writes the EPUB defined in §7.
+    /// Writes the book as an EPUB 3 file.
     pub fn write_epub<W: Write + Seek>(&self, out: W) -> Result<(), Error> {
         epub::write(&self.doc, out)
     }
 }
 
-/// An error that stops the conversion of one RFC (§12).
+/// An error that stops the conversion of one RFC.
 #[derive(Debug)]
 pub enum Error {
     /// The input is not a recognizable RFC reference.
@@ -121,7 +123,7 @@ impl From<zip::result::ZipError> for Error {
     }
 }
 
-/// Something the converter could not fully represent (§12). Conversion
+/// Something the converter could not fully represent. Conversion
 /// continues, and the text concerned is kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Warning {

@@ -1,4 +1,4 @@
-//! The `rfc2epub` command line (§9).
+//! The `rfc2epub` command line.
 
 use std::ffi::OsString;
 use std::fs::{self, File};

@@ -1,4 +1,4 @@
-//! Downloads from the RFC Editor (§4, §11).
+//! Downloads from the RFC Editor.
 
 use std::time::Duration;
 
@@ -10,7 +10,7 @@ const HOST: &str = "https://www.rfc-editor.org";
 const BODY_LIMIT: u64 = 32 * 1024 * 1024;
 const MAX_REDIRECTS: usize = 5;
 
-/// Downloads an RFC from the RFC Editor and parses it (§4, §11).
+/// Downloads an RFC from the RFC Editor and parses it.
 ///
 /// Two requests are made, one after the other: the metadata record, then the
 /// richest source it lists.

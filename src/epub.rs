@@ -1,4 +1,4 @@
-//! The package, navigation and ZIP container (§7).
+//! The package, navigation and ZIP container.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -117,7 +117,7 @@ pub(crate) fn write<W: Write + Seek>(doc: &Document, out: W) -> Result<(), Error
     Ok(())
 }
 
-/// The navigation tree shared by `nav.xhtml` and `toc.ncx` (§7.3).
+/// The navigation tree shared by `nav.xhtml` and `toc.ncx`.
 fn nav_tree(doc: &Document, has_front: bool) -> Vec<NavPoint> {
     let mut points = Vec::new();
     if has_front {

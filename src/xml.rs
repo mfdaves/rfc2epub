@@ -1,4 +1,4 @@
-//! Source A: RFCXML v3 (§5).
+//! The source of RFCs from 8650 onward: the published RFCXML v3.
 
 use std::collections::{HashMap, HashSet};
 
@@ -15,7 +15,7 @@ const SVG_NS: &str = "http://www.w3.org/2000/svg";
 const XLINK_NS: &str = "http://www.w3.org/1999/xlink";
 const XML_NS: &str = "http://www.w3.org/XML/1998/namespace";
 
-/// Elements that are inline content (§5.5).
+/// Elements that are inline content.
 const INLINE: &[&str] = &[
     "em", "strong", "sub", "sup", "br", "tt", "bcp14", "eref", "xref", "relref", "contact", "u",
     "iref", "cref",
@@ -191,7 +191,7 @@ fn trim_blank_lines(text: &str) -> String {
     }
 }
 
-/// The heading prefix derived from a `pn` value (§5.3).
+/// The heading prefix derived from a `pn` value.
 fn heading_number(pn: &str) -> Option<String> {
     let rest = pn.strip_prefix("section-")?;
     if let Some(appendix) = rest.strip_prefix("appendix.") {
@@ -245,7 +245,7 @@ fn rfc_numbers(list: Option<&str>) -> Vec<u32> {
         .collect()
 }
 
-/// An author of the RFC itself, for the package metadata (§7.2).
+/// An author of the RFC itself, for the package metadata.
 fn author(node: Node) -> Option<Author> {
     let fullname = collapse(node.attribute("fullname").unwrap_or(""));
     let surname = collapse(node.attribute("surname").unwrap_or(""));
@@ -286,7 +286,7 @@ fn author(node: Node) -> Option<Author> {
     })
 }
 
-/// The converter state: the target index of the first pass (§5.9) and the
+/// The converter state: the target index of the first pass and the
 /// warnings.
 struct Parser<'a> {
     /// Every anchor, pn and slugifiedName, mapped to the id of the element
@@ -388,7 +388,7 @@ impl<'a> Parser<'a> {
         section
     }
 
-    /// A `<references>` element: a section holding a bibliography (§5.6).
+    /// A `<references>` element: a section holding a bibliography.
     fn references(&mut self, node: Node<'a, '_>, depth: usize, listed: bool) -> Section {
         let toc = node.attribute("toc") != Some("exclude");
         let nav = listed && toc && depth <= self.toc_depth;
@@ -446,7 +446,7 @@ impl<'a> Parser<'a> {
         section
     }
 
-    /// The citation text of one `<reference>` (§5.6).
+    /// The citation text of one `<reference>`.
     fn citation(&mut self, node: Node<'a, '_>) -> Vec<Inline> {
         let front = child(node, "front");
         let mut parts: Vec<Vec<Inline>> = Vec::new();
@@ -773,7 +773,7 @@ impl<'a> Parser<'a> {
         cells
     }
 
-    /// Text artwork, inline SVG, or the alt text of binary artwork (§5.8).
+    /// Text artwork, inline SVG, or the alt text of binary artwork.
     fn artwork(&mut self, node: Node<'a, '_>, id: Option<String>, out: &mut Vec<Block>) {
         let svg = node.children().find(|c| {
             c.is_element()
@@ -812,7 +812,7 @@ impl<'a> Parser<'a> {
         });
     }
 
-    /// An authors' address block (§5.7).
+    /// An authors' address block.
     fn address(&mut self, node: Node<'a, '_>) -> Vec<Vec<Inline>> {
         let mut lines: Vec<Vec<Inline>> = Vec::new();
         let mut line = |text: String| {
@@ -950,7 +950,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// A cross-reference (§5.9).
+    /// A cross-reference.
     fn xref(&mut self, node: Node<'a, '_>, out: &mut Vec<Inline>) {
         let target = node.attribute("target").unwrap_or("");
         let dc = collapse(node.attribute("derivedContent").unwrap_or(""));
@@ -1131,7 +1131,7 @@ fn is_absolute(url: &str) -> bool {
     }
 }
 
-/// The authors of a cited document (§5.6).
+/// The authors of a cited document.
 fn citation_authors(front: Node) -> String {
     let mut names: Vec<(String, String)> = Vec::new();
     for author in children(front, "author") {
@@ -1174,8 +1174,8 @@ fn citation_authors(front: Node) -> String {
     }
 }
 
-/// Serializes an SVG drawing, keeping only SVG elements and safe attributes
-/// (§5.8).
+/// Serializes an SVG drawing, keeping only SVG elements and safe attributes:
+/// no scripts, event handlers, foreign content, styles or external links.
 fn sanitize_svg(svg: Node) -> String {
     let xlink = svg.descendants().any(|n| {
         n.attributes()
