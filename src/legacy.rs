@@ -36,7 +36,8 @@ pub(crate) fn parse(html: &str, info_json: &str) -> Result<Document, Error> {
 
     let mut warnings = Vec::new();
     let entries = linearize(xml.root_element(), &mut warnings);
-    let lines = remove_furniture(entries);
+    let mut lines = remove_furniture(entries);
+    remove_toc(&mut lines);
     let (front, sections) = build(lines, &mut warnings);
 
     let mut doc = Document {
@@ -277,20 +278,41 @@ fn is_blank(line: &Line) -> bool {
     line.iter().all(Piece::is_blank)
 }
 
+/// The visible text of a line.
+fn line_text(line: &Line) -> String {
+    line.iter()
+        .map(|p| match p {
+            Piece::Text(text, _) | Piece::Link { text, .. } => text.as_str(),
+            Piece::Anchor { .. } => "",
+        })
+        .collect()
+}
+
+/// The indentation of a line, and whether its text starts in lowercase.
+fn shape(line: &Line) -> (usize, bool) {
+    let text = line_text(line);
+    let body = text.trim_start();
+    let lower = body.chars().next().is_some_and(char::is_lowercase);
+    (text.len() - body.len(), lower)
+}
+
 /// §6.3 steps 2 and 3: drops running headers and footers, keeps their anchors
 /// on the next line that survives, and leaves one blank line at each page
-/// break.
+/// break, or none when a paragraph continues across it (§6.5).
 fn remove_furniture(entries: Vec<Entry>) -> Vec<Line> {
     let mut out: Vec<Line> = Vec::new();
     let mut pending: Vec<Piece> = Vec::new();
     let mut after_break = false;
+    // The indentation of the last line before the latest page break.
+    let mut break_indent = None;
     for entry in entries {
         let line = match entry {
             Entry::PageBreak => {
                 while out.last().is_some_and(is_blank) {
                     out.pop();
                 }
-                if !out.is_empty() {
+                if let Some(last) = out.last() {
+                    break_indent = Some(shape(last).0);
                     out.push(Vec::new());
                 }
                 after_break = true;
@@ -310,6 +332,13 @@ fn remove_furniture(entries: Vec<Entry>) -> Vec<Line> {
             continue;
         }
         after_break = false;
+        if let Some(indent) = break_indent.take()
+            && shape(&line) == (indent, true)
+            && heading_level(&line).is_none()
+            && out.last().is_some_and(is_blank)
+        {
+            out.pop();
+        }
         let mut line = line;
         if !pending.is_empty() {
             line.splice(0..0, pending.drain(..));
@@ -326,6 +355,59 @@ fn remove_furniture(entries: Vec<Entry>) -> Vec<Line> {
         out.push(pending);
     }
     out
+}
+
+/// Removes the original table of contents from the front matter, since the
+/// book has its own (§6.5). Its anchors move to the next line kept.
+fn remove_toc(lines: &mut Vec<Line>) {
+    let front = lines
+        .iter()
+        .position(|l| heading_level(l).is_some())
+        .unwrap_or(lines.len());
+    let Some(title) = lines[..front].iter().position(|l| {
+        line_text(l)
+            .trim()
+            .eq_ignore_ascii_case("table of contents")
+    }) else {
+        return;
+    };
+    let mut end = title + 1;
+    let mut entries = 0;
+    while end < front && (is_blank(&lines[end]) || is_toc_entry(&lines[end])) {
+        entries += usize::from(!is_blank(&lines[end]));
+        end += 1;
+    }
+    if entries == 0 {
+        return;
+    }
+    // Drop the title, the entries and the blank lines after them.
+    let removed: Vec<Line> = lines.drain(title..end).collect();
+    let anchors: Vec<Piece> = removed
+        .into_iter()
+        .flatten()
+        .filter(|p| matches!(p, Piece::Anchor { .. }))
+        .collect();
+    if let Some(next) = lines.get_mut(title) {
+        next.splice(0..0, anchors);
+    } else if !anchors.is_empty() {
+        lines.push(anchors);
+    }
+}
+
+/// A line of an in-text table of contents: it links to a section or a page,
+/// or ends with a dot leader and a page number.
+fn is_toc_entry(line: &Line) -> bool {
+    let links = line.iter().any(|p| match p {
+        Piece::Link { href, .. } => ["#section-", "#appendix-", "#page-"]
+            .iter()
+            .any(|h| href.starts_with(h)),
+        _ => false,
+    });
+    let text = line_text(line);
+    let text = text.trim_end();
+    let page = text.trim_end_matches(|c: char| c.is_ascii_digit() || "ivxlcIVXLC".contains(c));
+    let leader = page.trim_end().ends_with(". .") || page.trim_end().ends_with("..");
+    links || (page.len() < text.len() && leader)
 }
 
 /// The heading level of a line, if it is a heading.
@@ -631,6 +713,38 @@ mod tests {
         };
         assert_eq!(content.len(), 1);
         assert!(matches!(&content[0], Inline::Text(t) if t == "Title block\u{a0}line"));
+    }
+
+    #[test]
+    fn refinements() {
+        let html = concat!(
+            "<pre>Front\n\nTable of Contents\n\n",
+            "   <a href=\"#section-1\">1</a>.  One . . . . . <a href=\"#page-2\">2</a>\n",
+            "   Appendix A.  Two  . . . . . . . 12\n\n",
+            "<span class=\"h2\"><a class=\"selflink\" id=\"section-1\" href=\"#section-1\">1</a>.  One</span>\n\n",
+            "   A paragraph split\n\n<span class=\"grey\">[Page 1]</span></pre>\n",
+            "<hr class='noprint'/><!--NewPage--><pre class='newpage'><span id=\"page-2\" ></span>\n",
+            "<span class=\"grey\">RFC 42</span>\n\n   across pages.\n\n<span class=\"grey\">[Page 2]</span></pre>\n",
+            "<hr class='noprint'/><!--NewPage--><pre class='newpage'>\n",
+            "   New paragraph.</pre>"
+        );
+        let doc = parse(html, INFO).unwrap();
+        let text = |s: &Section| match &s.blocks[0].kind {
+            BlockKind::Pre { content, .. } => content
+                .iter()
+                .map(|i| match i {
+                    Inline::Text(t) => t.as_str(),
+                    _ => "",
+                })
+                .collect::<String>(),
+            _ => String::new(),
+        };
+        assert_eq!(text(&doc.front[0]), "Front");
+        assert_eq!(
+            text(&doc.sections[0]),
+            "   A paragraph split\n   across pages.\n\n   New paragraph."
+        );
+        assert!(doc.warnings.is_empty(), "{:?}", doc.warnings);
     }
 
     #[test]
