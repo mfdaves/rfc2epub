@@ -190,6 +190,13 @@ impl Date {
     }
 }
 
+/// `June 2022`, or `1 April 2023` when the day is known.
+impl std::fmt::Display for Date {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.display())
+    }
+}
+
 fn month_name(month: u8) -> &'static str {
     MONTHS
         .get(usize::from(month).wrapping_sub(1))

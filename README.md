@@ -52,6 +52,8 @@ Arguments:
 
 Options:
   -o, --output-dir <DIR>  Directory to write into [default: .]
+  -m, --metadata          Show each RFC's metadata and abstract instead of
+                          converting it
   -h, --help              Print help
   -V, --version           Print version
 ```
@@ -80,14 +82,41 @@ books/rfc791-internet-protocol.epub
 | 1 | At least one RFC failed |
 | 2 | Usage error, such as a bad reference or more than five RFCs |
 
+### Read before you convert
+
+`--metadata` shows what an RFC is about, and whether it is still current,
+without writing any file:
+
+```console
+$ rfc2epub --metadata rfc2119
+RFC 2119: Key words for use in RFCs to Indicate Requirement Levels
+Authors:      S. Bradner
+Published:    March 1997
+Category:     Best Current Practice
+Updated by:   RFC 8174
+Keywords:     Standards, Track, Documents
+Source:       https://www.rfc-editor.org/rfc/rfc2119.html
+File:         rfc2119-key-words-for-use-in-rfcs-to-indicate-requirement-levels.epub
+
+  In many standards track documents several words are used to signify the
+  requirements in the specification. These words are often capitalized. This
+  document defines these words as they should be interpreted in IETF
+  documents. This document specifies an Internet Best Current Practices for
+  the Internet Community, and requests discussion and suggestions for
+  improvements.
+```
+
+It takes the same one to five RFCs, separates them with a blank line, and uses
+the same exit statuses. `File` is the name the book would get.
+
 ## Network
 
 Only `https://www.rfc-editor.org/rfc/` is contacted. A link you pass is parsed
 for its RFC number and never fetched. Each RFC takes two requests made one after
-the other: the metadata record `rfc<N>.json`, then the `rfc<N>.xml` or
-`rfc<N>.html` source it lists. There are no retries and no cache. Requests time
-out after 10 seconds to connect and 60 seconds in total, bodies are capped at
-32 MiB, and the user agent is `rfc2epub/<version>`.
+the other, with or without `--metadata`: the metadata record `rfc<N>.json`,
+then the `rfc<N>.xml` or `rfc<N>.html` source it lists. There are no retries
+and no cache. Requests time out after 10 seconds to connect and 60 seconds in
+total, bodies are capped at 32 MiB, and the user agent is `rfc2epub/<version>`.
 
 ## Limits
 
